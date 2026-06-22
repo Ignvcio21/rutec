@@ -302,19 +302,112 @@ $("btnGps").addEventListener("click", () => {
   );
 });
 
-$("btnOrigen").addEventListener("click", async () => {
-  const q = $("origenInput").value.trim();
-  if (!q) return toast("Escribe una dirección de origen");
-  setStatus($("origenStatus"), "Buscando dirección...", "work");
-  const g = await apiGeocode(q);
-  if (g.ok) {
-    state.origen = { lat: g.lat, lon: g.lon, label: g.display };
-    setStatus($("origenStatus"), "✓ Origen: " + g.display, "ok");
-    refreshProcesar();
-    saveSession();
-  } else {
-    setStatus($("origenStatus"), "No encontré esa dirección. Sé más específico.", "bad");
+function setOrigen(lat, lon, label) {
+  state.origen = { lat, lon, label };
+  setStatus($("origenStatus"), "✓ Origen: " + label, "ok");
+  $("origenResults").classList.add("hidden");
+  refreshProcesar();
+  saveSession();
+}
+
+// Busca varias coincidencias para que el usuario elija la correcta.
+async function apiGeocodeMany(q, n = 6) {
+  const country = state.country || "Chile";
+  const full = [String(q || "").trim(), country].filter(Boolean).join(", ");
+  const wait = 1100 - (Date.now() - _lastGeo);
+  if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+  _lastGeo = Date.now();
+  const cc = country.toLowerCase() === "chile" ? "&countrycodes=cl" : "";
+  const url =
+    `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=${n}&addressdetails=1` +
+    `${cc}&q=${encodeURIComponent(full)}`;
+  try {
+    const r = await fetch(url, { headers: { Accept: "application/json" } });
+    const arr = await r.json();
+    return Array.isArray(arr)
+      ? arr.map((h) => ({ lat: parseFloat(h.lat), lon: parseFloat(h.lon), display: h.display_name }))
+      : [];
+  } catch {
+    return [];
   }
+}
+
+function renderOrigenResults(results) {
+  const box = $("origenResults");
+  box.innerHTML = "";
+  if (!results.length) {
+    box.innerHTML = `<div class="geo-empty">No encontré ese lugar. Agrega más detalle, o ponlo a mano en el mapa 👇</div>`;
+    box.classList.remove("hidden");
+    return;
+  }
+  results.forEach((r) => {
+    const parts = r.display.split(",").map((s) => s.trim());
+    const main = parts.slice(0, 2).join(", ");
+    const sub = parts.slice(2).join(", ");
+    const div = document.createElement("div");
+    div.className = "geo-item";
+    div.innerHTML = `<span class="pin">📍</span><div class="txt">${main}<div class="sub">${sub}</div></div>`;
+    div.onclick = () => setOrigen(r.lat, r.lon, main);
+    box.appendChild(div);
+  });
+  box.classList.remove("hidden");
+}
+
+async function buscarOrigen() {
+  const q = $("origenInput").value.trim();
+  if (q.length < 3) { $("origenResults").classList.add("hidden"); return; }
+  setStatus($("origenStatus"), "Buscando...", "work");
+  const results = await apiGeocodeMany(q);
+  setStatus($("origenStatus"), "", "");
+  renderOrigenResults(results);
+}
+
+$("btnOrigen").addEventListener("click", buscarOrigen);
+$("origenInput").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); buscarOrigen(); } });
+let _origenDebounce;
+$("origenInput").addEventListener("input", () => {
+  clearTimeout(_origenDebounce);
+  _origenDebounce = setTimeout(buscarOrigen, 700);
+});
+
+/* ---------- Mapa para fijar el punto a mano (se abre con botón) ---------- */
+let _map = null;
+function initMapa() {
+  const start = state.origen ? [state.origen.lat, state.origen.lon] : [-35.4264, -71.6554]; // Talca centro por defecto
+  _map = L.map("mapa", { zoomControl: true }).setView(start, state.origen ? 16 : 14);
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19,
+    attribution: "© OpenStreetMap",
+  }).addTo(_map);
+}
+
+$("btnAbrirMapa").addEventListener("click", () => {
+  const box = $("mapaBox");
+  const abrir = box.classList.contains("hidden");
+  box.classList.toggle("hidden");
+  if (abrir) {
+    if (!_map) initMapa();
+    setTimeout(() => _map.invalidateSize(), 250);
+    setTimeout(() => _map.invalidateSize(), 700);
+    box.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+});
+
+$("btnGpsMapa").addEventListener("click", () => {
+  if (!navigator.geolocation || !_map) return toast("Sin GPS disponible");
+  navigator.geolocation.getCurrentPosition(
+    (p) => _map.setView([p.coords.latitude, p.coords.longitude], 17),
+    () => toast("No se pudo obtener tu ubicación"),
+    { enableHighAccuracy: true, timeout: 15000 }
+  );
+});
+
+$("btnFijarMapa").addEventListener("click", () => {
+  if (!_map) return;
+  const c = _map.getCenter();
+  setOrigen(c.lat, c.lng, `Punto en mapa (${c.lat.toFixed(4)}, ${c.lng.toFixed(4)})`);
+  $("mapaBox").classList.add("hidden");
+  toast("Punto de partida fijado en el mapa");
 });
 
 /* ==========================================================================

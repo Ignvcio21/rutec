@@ -1,6 +1,6 @@
 /* Service worker minimo: cachea la cascara de la app para que cargue rapido
    y funcione aunque la red este lenta. Las llamadas a /api siempre van a la red. */
-const CACHE = "rutec-v10";
+const CACHE = "rutec-v12";
 const ASSETS = [
   "./",
   "index.html",
@@ -27,6 +27,8 @@ self.addEventListener("fetch", (e) => {
   // Solo interceptar GET; las subidas (POST /api/ocr) van directo a la red.
   if (e.request.method !== "GET") return;
   const url = new URL(e.request.url);
+  // No tocar otros dominios (mapas, Leaflet, etc.) ni la API.
+  if (url.origin !== location.origin) return;
   if (url.pathname.startsWith("/api/")) return;
   // RED PRIMERO: siempre intenta traer lo último; si no hay internet, usa la copia.
   e.respondWith(

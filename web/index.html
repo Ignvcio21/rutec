@@ -8,6 +8,7 @@
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="icon" href="icon-192.png" />
   <link rel="apple-touch-icon" href="icon-192.png" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -30,11 +31,27 @@
       <div class="row">
         <button id="btnGps" class="btn btn-ghost">📡 Usar mi ubicación (GPS)</button>
       </div>
-      <div class="or">o escribe la dirección</div>
+      <div class="or">o escribe la dirección y elige de la lista</div>
       <div class="row">
-        <input id="origenInput" type="text" placeholder="Ej: Plaza de Armas, Talca" />
-        <button id="btnOrigen" class="btn">Fijar</button>
+        <input id="origenInput" type="text" placeholder="Ej: Plaza de Armas, Talca" autocomplete="off" />
+        <button id="btnOrigen" class="btn">Buscar</button>
       </div>
+      <div id="origenResults" class="geo-results hidden"></div>
+
+      <div class="or">o ponlo a mano en el mapa</div>
+      <button id="btnAbrirMapa" class="btn btn-ghost" style="width:100%">📍 Fijar punto de partida en el mapa</button>
+      <div id="mapaBox" class="mapa-box hidden">
+        <div class="mapa-wrap">
+          <div id="mapa"></div>
+          <div class="mapa-pin">📍</div>
+        </div>
+        <p class="mapa-hint">Mueve el mapa para centrar el pin en el punto exacto.</p>
+        <div class="row">
+          <button id="btnGpsMapa" class="btn btn-ghost">🎯 Mi GPS</button>
+          <button id="btnFijarMapa" class="btn" style="flex:1">✓ Fijar este punto</button>
+        </div>
+      </div>
+
       <p id="origenStatus" class="status"></p>
     </section>
 
@@ -119,6 +136,7 @@
     </div>
   </div>
 
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
