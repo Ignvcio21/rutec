@@ -149,17 +149,24 @@ async def _call_grok_vision(images: list[tuple[bytes, str]], prompt: str) -> dic
         "Content-Type": "application/json",
     }
 
-    # Reintenta automáticamente si la API responde 429 (límite por minuto).
+    # Reintenta solo ante errores TRANSITORIOS (límite por minuto o saturación
+    # del modelo). Espera incremental entre intentos.
+    transitorios = {429, 500, 502, 503, 529}
     resp = None
-    for attempt in range(3):
-        async with httpx.AsyncClient(timeout=120) as client:
-            resp = await client.post(
-                f"{OCR_BASE_URL}/chat/completions", json=payload, headers=headers
-            )
-        if resp.status_code == 200:
+    intentos = 4
+    for attempt in range(intentos):
+        try:
+            async with httpx.AsyncClient(timeout=120) as client:
+                resp = await client.post(
+                    f"{OCR_BASE_URL}/chat/completions", json=payload, headers=headers
+                )
+        except Exception:
+            resp = None
+        if resp is not None and resp.status_code == 200:
             break
-        if resp.status_code == 429 and attempt < 2:
-            await asyncio.sleep(3 * (attempt + 1))  # espera 3s, luego 6s
+        code = resp.status_code if resp is not None else 0
+        if (resp is None or code in transitorios) and attempt < intentos - 1:
+            await asyncio.sleep(2 * (attempt + 1))  # 2s, 4s, 6s, 8s
             continue
         break
 
@@ -169,6 +176,11 @@ async def _call_grok_vision(images: list[tuple[bytes, str]], prompt: str) -> dic
             raise HTTPException(
                 status_code=429,
                 detail="Límite de la IA alcanzado momentáneamente. Espera ~1 minuto y reintenta.",
+            )
+        if code in (500, 502, 503, 529):
+            raise HTTPException(
+                status_code=503,
+                detail="La IA de Google está saturada en este momento (alta demanda). Espera unos segundos y reintenta.",
             )
         raise HTTPException(
             status_code=502,
