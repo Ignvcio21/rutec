@@ -134,6 +134,41 @@ function ordenarRutaCercana(stops) {
   return ruta;
 }
 
+// Ordena y mide la ruta por CARRETERA REAL usando OSRM (gratis).
+// Optimiza el orden por caminos reales y da distancias reales (km).
+// Si el servicio falla (sin internet o caído), usa la versión en línea recta.
+async function ordenarRutaReal(origen, stops) {
+  if (!stops.length) return [];
+  if (stops.length === 1) {
+    stops[0].dist = haversine(origen.lat, origen.lon, stops[0].lat, stops[0].lon);
+    return stops.slice();
+  }
+  try {
+    const coords = [[origen.lon, origen.lat], ...stops.map((s) => [s.lon, s.lat])];
+    const path = coords.map((c) => `${c[0]},${c[1]}`).join(";");
+    const url = `https://router.project-osrm.org/trip/v1/driving/${path}?source=first&roundtrip=false&overview=false`;
+    const r = await fetch(url);
+    const data = await r.json();
+    if (data.code !== "Ok" || !data.trips || !data.trips[0]) throw new Error("osrm");
+    const N = coords.length;
+    const order = new Array(N);
+    data.waypoints.forEach((w, inputIdx) => { order[w.waypoint_index] = inputIdx; });
+    const legs = data.trips[0].legs;
+    const ruta = [];
+    for (let k = 1; k < N; k++) {
+      const inputIdx = order[k];
+      if (inputIdx == null || inputIdx === 0) continue;
+      const stop = stops[inputIdx - 1];
+      stop.dist = (legs[k - 1] ? legs[k - 1].distance : 0) / 1000; // km por carretera
+      ruta.push(stop);
+    }
+    if (ruta.length !== stops.length) throw new Error("incompleto");
+    return ruta;
+  } catch {
+    return ordenarRutaCercana(stops); // respaldo: línea recta
+  }
+}
+
 /* ---------- API helpers ---------- */
 // Geocodificación directa desde el navegador a OpenStreetMap (Nominatim).
 // Con caché y un máximo de ~1 consulta por segundo (política de uso de OSM).
@@ -587,8 +622,9 @@ $("btnProcesar").addEventListener("click", async () => {
     }
   }
 
-  // 3) Orden encadenado (vecino más cercano) — ruta de manejo más corta
-  state.resultado = ordenarRutaCercana(ubicadas);
+  // 3) Orden por CARRETERA real (OSRM); si falla, cae a línea recta
+  setStatus($("procesarStatus"), "Calculando la mejor ruta por carretera...", "work");
+  state.resultado = await ordenarRutaReal(state.origen, ubicadas);
   saveSession();
   const totalKm = state.resultado.reduce((s, u) => s + u.dist, 0);
 
@@ -700,7 +736,7 @@ function renderResultado(ubicadas, fallidas) {
         if (g.ok) {
           const u = { ...f, direccion: q, lat: g.lat, lon: g.lon };
           state.resultado.push(u);
-          state.resultado = ordenarRutaCercana(state.resultado);
+          state.resultado = await ordenarRutaReal(state.origen, state.resultado);
           saveSession();
           renderResultado(state.resultado, fallidas.filter((x) => x !== f));
           toast("Agregado y reordenado");
