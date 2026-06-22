@@ -178,6 +178,13 @@ async function ordenarRutaReal(origen, stops) {
 const _geoCache = {};
 let _lastGeo = 0;
 
+// Enfoca TODAS las búsquedas en la zona de Talca / Región del Maule, para que
+// el buscador NO traiga calles del mismo nombre en otras partes de Chile.
+// Formato Nominatim: "lon1,lat1,lon2,lat2" (dos esquinas del recuadro).
+// (Cubre Talca y comunas cercanas. Ajustable si algún día cambia la zona.)
+const GEO_VIEWBOX = "-72.20,-34.95,-71.10,-35.95";
+const GEO_AREA_DEFECTO = "Talca"; // si la factura no trae comuna, se asume Talca
+
 // Extrae "calle de grilla" -> ej: "5½ Poniente" => "5 poniente"; null si no aplica.
 function gridKey(s) {
   const m = String(s || "").toLowerCase().match(/(\d+)[^a-z0-9]*(norte|sur|oriente|poniente)/);
@@ -205,6 +212,7 @@ async function _nominatim(fullQuery, country) {
   const cc = country.toLowerCase() === "chile" ? "&countrycodes=cl" : "";
   const url =
     `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&addressdetails=1` +
+    `&viewbox=${GEO_VIEWBOX}&bounded=1` +
     `${cc}&q=${encodeURIComponent(fullQuery)}`;
   try {
     const r = await fetch(url, { headers: { Accept: "application/json" } });
@@ -230,7 +238,9 @@ async function apiGeocode(q, comuna = "") {
   const country = state.country || "Chile";
   const com = String(comuna || "").trim();
   const dir = String(q || "").trim();
-  const key = [dir, com, country].join("|").toLowerCase();
+  // Si la factura no trae comuna, se asume Talca (la zona de reparto).
+  const area = com || GEO_AREA_DEFECTO;
+  const key = [dir, area, country].join("|").toLowerCase();
   if (_geoCache[key]) return _geoCache[key];
 
   let res = null;
@@ -239,7 +249,7 @@ async function apiGeocode(q, comuna = "") {
   //    pero solo la acepta si cae en la calle principal correcta.
   const grid = parseGrid(dir);
   if (grid) {
-    const interQ = [`${grid.principal} y ${grid.transversal}`, com, country].filter(Boolean).join(", ");
+    const interQ = [`${grid.principal} y ${grid.transversal}`, area, country].filter(Boolean).join(", ");
     const inter = await _nominatim(interQ, country);
     if (inter.ok && gridKey(inter.road || inter.display) === gridKey(grid.principal)) {
       res = { ...inter, preciso: "esquina" };
@@ -248,7 +258,7 @@ async function apiGeocode(q, comuna = "") {
 
   // 2) Si no hubo esquina válida, usa la dirección completa (método normal).
   if (!res) {
-    const full = [dir, com, country].filter(Boolean).join(", ");
+    const full = [dir, area, country].filter(Boolean).join(", ");
     res = await _nominatim(full, country);
   }
 
@@ -358,6 +368,7 @@ async function apiGeocodeMany(q, n = 6) {
   const cc = country.toLowerCase() === "chile" ? "&countrycodes=cl" : "";
   const url =
     `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=${n}&addressdetails=1` +
+    `&viewbox=${GEO_VIEWBOX}&bounded=1` +
     `${cc}&q=${encodeURIComponent(full)}`;
   try {
     const r = await fetch(url, { headers: { Accept: "application/json" } });
