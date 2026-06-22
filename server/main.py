@@ -122,51 +122,65 @@ def _extract_json(text: str) -> dict:
     return json.loads(text)
 
 
-async def _call_grok_vision(image_bytes: bytes, mime: str, prompt: str) -> dict:
+async def _call_grok_vision(images: list[tuple[bytes, str]], prompt: str) -> dict:
+    """Envía una o varias imágenes en UNA sola petición (ahorra cuota)."""
     if not OCR_API_KEY:
         raise HTTPException(
             status_code=400,
             detail="Falta la API key de IA. Edita el archivo .env y pon OCR_API_KEY=tu_clave",
         )
-    b64 = base64.b64encode(image_bytes).decode("ascii")
-    data_url = f"data:{mime};base64,{b64}"
+    content = [{"type": "text", "text": prompt}]
+    for image_bytes, mime in images:
+        b64 = base64.b64encode(image_bytes).decode("ascii")
+        content.append({"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}})
+
     payload = {
         "model": OCR_MODEL,
         "temperature": 0,
-        "messages": [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": prompt},
-                    {"type": "image_url", "image_url": {"url": data_url, "detail": "high"}},
-                ],
-            }
-        ],
+        "messages": [{"role": "user", "content": content}],
     }
     headers = {
         "Authorization": f"Bearer {OCR_API_KEY}",
         "Content-Type": "application/json",
     }
-    async with httpx.AsyncClient(timeout=120) as client:
-        resp = await client.post(
-            f"{OCR_BASE_URL}/chat/completions", json=payload, headers=headers
-        )
-    if resp.status_code != 200:
+
+    # Reintenta automáticamente si la API responde 429 (límite por minuto).
+    resp = None
+    for attempt in range(3):
+        async with httpx.AsyncClient(timeout=120) as client:
+            resp = await client.post(
+                f"{OCR_BASE_URL}/chat/completions", json=payload, headers=headers
+            )
+        if resp.status_code == 200:
+            break
+        if resp.status_code == 429 and attempt < 2:
+            await asyncio.sleep(3 * (attempt + 1))  # espera 3s, luego 6s
+            continue
+        break
+
+    if resp is None or resp.status_code != 200:
+        code = resp.status_code if resp is not None else "?"
+        if code == 429:
+            raise HTTPException(
+                status_code=429,
+                detail="Límite de la IA alcanzado momentáneamente. Espera ~1 minuto y reintenta.",
+            )
         raise HTTPException(
             status_code=502,
-            detail=f"Error de la API de IA ({resp.status_code}): {resp.text[:400]}",
+            detail=f"Error de la API de IA ({code}): {resp.text[:300] if resp is not None else ''}",
         )
+
     data = resp.json()
     try:
-        content = data["choices"][0]["message"]["content"]
+        msg = data["choices"][0]["message"]["content"]
     except (KeyError, IndexError):
-        raise HTTPException(status_code=502, detail="Respuesta inesperada de Grok")
+        raise HTTPException(status_code=502, detail="Respuesta inesperada de la IA")
     try:
-        return _extract_json(content)
+        return _extract_json(msg)
     except Exception:
         raise HTTPException(
             status_code=502,
-            detail=f"No pude interpretar la respuesta del modelo: {content[:300]}",
+            detail=f"No pude interpretar la respuesta del modelo: {msg[:300]}",
         )
 
 
@@ -199,14 +213,17 @@ async def list_models():
 
 
 @app.post("/api/ocr")
-async def ocr(tipo: str = Form(...), file: UploadFile = File(...)):
-    """tipo = 'plantilla' o 'factura'."""
-    content = await file.read()
-    if not content:
-        raise HTTPException(status_code=400, detail="Imagen vacia")
-    mime = file.content_type or "image/jpeg"
+async def ocr(tipo: str = Form(...), files: list[UploadFile] = File(...)):
+    """tipo = 'plantilla' o 'factura'. Acepta varias imágenes en una sola petición."""
+    images: list[tuple[bytes, str]] = []
+    for f in files:
+        content = await f.read()
+        if content:
+            images.append((content, f.content_type or "image/jpeg"))
+    if not images:
+        raise HTTPException(status_code=400, detail="No se recibió ninguna imagen")
     prompt = PROMPT_PLANTILLA if tipo == "plantilla" else PROMPT_FACTURA
-    result = await _call_grok_vision(content, mime, prompt)
+    result = await _call_grok_vision(images, prompt)
     return JSONResponse(result)
 
 

@@ -142,12 +142,15 @@ function resizeImage(file, maxDim = 2000, quality = 0.85) {
   });
 }
 
-async function apiOcr(file, tipo) {
-  let blob = file;
-  try { blob = await resizeImage(file); } catch { blob = file; }
+async function apiOcr(fileOrList, tipo) {
+  const arr = Array.isArray(fileOrList) ? fileOrList : [fileOrList];
   const fd = new FormData();
   fd.append("tipo", tipo);
-  fd.append("file", blob, "foto.jpg");
+  for (const f of arr) {
+    let blob = f;
+    try { blob = await resizeImage(f); } catch { blob = f; }
+    fd.append("files", blob, "foto.jpg");
+  }
   let r;
   try {
     r = await fetch("/api/ocr", { method: "POST", body: fd });
@@ -253,12 +256,16 @@ function renderPlantilla() {
 $("facturaFile").addEventListener("change", async (e) => {
   const files = Array.from(e.target.files);
   if (!files.length) return;
-  let done = 0, total = files.length, found = 0;
-  for (const file of files) {
-    done++;
-    setStatus($("facturaStatus"), `Leyendo factura ${done}/${total} con IA...`, "work");
+  // Agrupar las imágenes para enviar varias en una sola petición (ahorra cuota de IA).
+  const CHUNK = 6;
+  const grupos = [];
+  for (let i = 0; i < files.length; i += CHUNK) grupos.push(files.slice(i, i + CHUNK));
+
+  let found = 0, errores = 0;
+  for (let c = 0; c < grupos.length; c++) {
+    setStatus($("facturaStatus"), `Leyendo facturas con IA... (grupo ${c + 1}/${grupos.length})`, "work");
     try {
-      const data = await apiOcr(file, "factura");
+      const data = await apiOcr(grupos[c], "factura");
       const arr = data.facturas || (data.cliente ? [data] : []);
       for (const f of arr) {
         const item = {
@@ -270,11 +277,13 @@ $("facturaFile").addEventListener("change", async (e) => {
         if (item.cliente || item.direccion) { state.facturas.push(item); found++; }
       }
     } catch (err) {
-      toast("Factura " + done + ": " + err.message);
+      errores++;
+      toast(err.message);
     }
   }
   renderFacturas();
-  setStatus($("facturaStatus"), `✓ ${found} factura(s) procesadas (total: ${state.facturas.length})`, "ok");
+  const extra = errores ? ` · ${errores} grupo(s) con error` : "";
+  setStatus($("facturaStatus"), `✓ ${found} factura(s) leídas (total: ${state.facturas.length})${extra}`, found ? "ok" : "bad");
   e.target.value = "";
 });
 
