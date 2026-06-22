@@ -166,16 +166,32 @@ async function apiOcr(file, tipo) {
    PASO 1 - Origen
    ========================================================================== */
 $("btnGps").addEventListener("click", () => {
-  if (!navigator.geolocation) return toast("Este dispositivo no tiene GPS disponible");
-  setStatus($("origenStatus"), "Obteniendo ubicación...", "work");
+  if (!navigator.geolocation) return toast("Este dispositivo no permite ubicación");
+  setStatus($("origenStatus"), "Obteniendo ubicación... acepta el permiso del navegador 📍", "work");
+
+  const onOk = (pos) => {
+    state.origen = { lat: pos.coords.latitude, lon: pos.coords.longitude, label: "Mi ubicación (GPS)" };
+    setStatus($("origenStatus"), `✓ Origen: tu ubicación actual (${state.origen.lat.toFixed(4)}, ${state.origen.lon.toFixed(4)})`, "ok");
+    refreshProcesar();
+  };
+  const onErr = (err) => {
+    let m = err.message || "Error desconocido";
+    if (err.code === 1) m = "Permiso de ubicación denegado. Actívalo en los ajustes del navegador (Ubicación) y reintenta.";
+    else if (err.code === 2) m = "Ubicación no disponible. Revisa que el GPS del teléfono esté encendido.";
+    else if (err.code === 3) m = "Tardó demasiado. Reintenta (mejor al aire libre).";
+    setStatus($("origenStatus"), "✗ " + m, "bad");
+  };
+  // Primer intento de alta precisión; si falla por tiempo, reintenta en modo rápido.
   navigator.geolocation.getCurrentPosition(
-    (pos) => {
-      state.origen = { lat: pos.coords.latitude, lon: pos.coords.longitude, label: "Mi ubicación (GPS)" };
-      setStatus($("origenStatus"), `✓ Origen: GPS (${state.origen.lat.toFixed(4)}, ${state.origen.lon.toFixed(4)})`, "ok");
-      refreshProcesar();
+    onOk,
+    (err) => {
+      if (err.code === 3) {
+        navigator.geolocation.getCurrentPosition(onOk, onErr, { enableHighAccuracy: false, timeout: 25000, maximumAge: 120000 });
+      } else {
+        onErr(err);
+      }
     },
-    (err) => setStatus($("origenStatus"), "No se pudo obtener GPS: " + err.message, "bad"),
-    { enableHighAccuracy: true, timeout: 10000 }
+    { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
   );
 });
 
