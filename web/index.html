@@ -75,7 +75,10 @@
     <section class="card hidden" id="step-resultado">
       <h2>🧭 Ruta ordenada</h2>
       <div class="row result-actions">
-        <button id="btnMapsAll" class="btn">🗺️ Ruta completa en Google Maps</button>
+        <button id="btnIniciarRuta" class="btn btn-big">▶️ Iniciar ruta (paso a paso)</button>
+      </div>
+      <div class="row result-actions">
+        <button id="btnMapsAll" class="btn btn-ghost">🗺️ Ruta completa en Maps</button>
         <button id="btnCsv" class="btn btn-ghost">⬇️ Exportar CSV</button>
       </div>
       <p id="doneCounter" class="done-counter"></p>
@@ -93,6 +96,28 @@
   </footer>
 
   <div id="toast" class="toast hidden"></div>
+
+  <!-- Modo ruta paso a paso (optativo) -->
+  <div id="routeMode" class="route-mode hidden">
+    <div class="rm-top">
+      <span id="rmProgress" class="rm-progress"></span>
+      <button id="rmExit" class="rm-exit">✕ Salir</button>
+    </div>
+    <div class="rm-card" id="rmCard">
+      <div class="rm-pos" id="rmPos"></div>
+      <div class="rm-name" id="rmName"></div>
+      <div class="rm-addr" id="rmAddr"></div>
+      <div class="rm-dist" id="rmDist"></div>
+      <div class="rm-nav">
+        <a id="rmWaze" class="rm-bignav waze" target="_blank" rel="noopener">🚗 Ir con Waze</a>
+        <a id="rmMaps" class="rm-bignav gmaps" target="_blank" rel="noopener">🗺️ Maps</a>
+      </div>
+    </div>
+    <div class="rm-actions">
+      <button id="rmSkip" class="btn btn-ghost">⏭️ Saltar</button>
+      <button id="rmDone" class="btn">✓ Entregado</button>
+    </div>
+  </div>
 
   <script src="app.js"></script>
 </body>

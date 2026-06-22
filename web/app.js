@@ -108,35 +108,83 @@ function ordenarRutaCercana(stops) {
 // Con caché y un máximo de ~1 consulta por segundo (política de uso de OSM).
 const _geoCache = {};
 let _lastGeo = 0;
-async function apiGeocode(q, comuna = "") {
-  const country = state.country || "Chile";
-  const parts = [String(q || "").trim(), String(comuna || "").trim(), country].filter(Boolean);
-  const full = parts.join(", ");
-  const key = full.toLowerCase();
-  if (_geoCache[key]) return _geoCache[key];
 
+// Extrae "calle de grilla" -> ej: "5½ Poniente" => "5 poniente"; null si no aplica.
+function gridKey(s) {
+  const m = String(s || "").toLowerCase().match(/(\d+)[^a-z0-9]*(norte|sur|oriente|poniente)/);
+  return m ? `${m[1]} ${m[2]}` : null;
+}
+
+// Detecta direcciones de grilla chilena ("5 Poniente 3 y 4 Norte 1433")
+// y devuelve { principal:"5 poniente", transversal:"3 norte" } o null.
+function parseGrid(dir) {
+  const re = /(\d+)\s*(?:y\s*\d+\s*)?(norte|sur|oriente|poniente)/gi;
+  const calles = [];
+  let m;
+  while ((m = re.exec(String(dir || "").toLowerCase()))) calles.push(`${m[1]} ${m[2]}`);
+  if (calles.length >= 2 && calles[0] !== calles[1]) {
+    return { principal: calles[0], transversal: calles[1] };
+  }
+  return null;
+}
+
+// Una sola consulta a Nominatim (respeta el límite de 1/seg).
+async function _nominatim(fullQuery, country) {
   const wait = 1100 - (Date.now() - _lastGeo);
   if (wait > 0) await new Promise((r) => setTimeout(r, wait));
   _lastGeo = Date.now();
-
   const cc = country.toLowerCase() === "chile" ? "&countrycodes=cl" : "";
   const url =
     `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&addressdetails=1` +
-    `${cc}&q=${encodeURIComponent(full)}`;
+    `${cc}&q=${encodeURIComponent(fullQuery)}`;
   try {
     const r = await fetch(url, { headers: { Accept: "application/json" } });
     const arr = await r.json();
-    let res;
     if (Array.isArray(arr) && arr.length) {
-      res = { ok: true, lat: parseFloat(arr[0].lat), lon: parseFloat(arr[0].lon), display: arr[0].display_name, query: full };
-    } else {
-      res = { ok: false, error: "Sin resultados", query: full };
+      const h = arr[0];
+      return {
+        ok: true,
+        lat: parseFloat(h.lat),
+        lon: parseFloat(h.lon),
+        display: h.display_name,
+        road: (h.address && (h.address.road || h.address.pedestrian)) || "",
+        query: fullQuery,
+      };
     }
-    _geoCache[key] = res;
-    return res;
+    return { ok: false, error: "Sin resultados", query: fullQuery };
   } catch {
-    return { ok: false, error: "No se pudo conectar con el mapa", query: full };
+    return { ok: false, error: "No se pudo conectar con el mapa", query: fullQuery };
   }
+}
+
+async function apiGeocode(q, comuna = "") {
+  const country = state.country || "Chile";
+  const com = String(comuna || "").trim();
+  const dir = String(q || "").trim();
+  const key = [dir, com, country].join("|").toLowerCase();
+  if (_geoCache[key]) return _geoCache[key];
+
+  let res = null;
+
+  // 1) Si es dirección de grilla, intenta la ESQUINA (más precisa por cuadra),
+  //    pero solo la acepta si cae en la calle principal correcta.
+  const grid = parseGrid(dir);
+  if (grid) {
+    const interQ = [`${grid.principal} y ${grid.transversal}`, com, country].filter(Boolean).join(", ");
+    const inter = await _nominatim(interQ, country);
+    if (inter.ok && gridKey(inter.road || inter.display) === gridKey(grid.principal)) {
+      res = { ...inter, preciso: "esquina" };
+    }
+  }
+
+  // 2) Si no hubo esquina válida, usa la dirección completa (método normal).
+  if (!res) {
+    const full = [dir, com, country].filter(Boolean).join(", ");
+    res = await _nominatim(full, country);
+  }
+
+  _geoCache[key] = res;
+  return res;
 }
 const NO_SERVER_MSG =
   "Sin conexión con el servidor. Verifica que Rutec.exe esté abierto (ventana negra) " +
@@ -435,7 +483,9 @@ function mapsStopUrl(lat, lon) {
   return url;
 }
 
+let _lastFallidas = [];
 function renderResultado(ubicadas, fallidas) {
+  _lastFallidas = fallidas || [];
   const sec = $("step-resultado");
   sec.classList.remove("hidden");
   const list = $("resultList");
@@ -502,6 +552,82 @@ function renderResultado(ubicadas, fallidas) {
 
   sec.scrollIntoView({ behavior: "smooth", block: "start" });
 }
+
+/* ==========================================================================
+   MODO RUTA PASO A PASO (optativo) — muestra una parada a la vez
+   ========================================================================== */
+let rmIndex = 0;
+
+function nextPendingIndex(from) {
+  const done = loadDone();
+  const N = state.resultado.length;
+  for (let k = 0; k < N; k++) {
+    const i = (from + k) % N;
+    if (!done.has(doneKey(state.resultado[i]))) return i;
+  }
+  return -1; // todas entregadas
+}
+
+function renderStep() {
+  const N = state.resultado.length;
+  const done = loadDone();
+  const hechas = state.resultado.filter((u) => done.has(doneKey(u))).length;
+  const card = $("rmCard");
+  const acts = $("rmSkip").parentElement;
+
+  if (rmIndex < 0) {
+    card.innerHTML = `<div class="rm-done-all">🎉 ¡Ruta completada!</div>` +
+      `<div class="rm-addr">Entregaste las ${N} paradas.</div>`;
+    acts.classList.add("hidden");
+    $("rmProgress").textContent = `${hechas} de ${N} entregadas`;
+    return;
+  }
+  acts.classList.remove("hidden");
+  const u = state.resultado[rmIndex];
+  $("rmProgress").textContent = `${hechas} de ${N} entregadas`;
+  // reconstruir la tarjeta (por si venía del estado "completada")
+  card.innerHTML =
+    `<div class="rm-pos" id="rmPos"></div><div class="rm-name" id="rmName"></div>` +
+    `<div class="rm-addr" id="rmAddr"></div><div class="rm-dist" id="rmDist"></div>` +
+    `<div class="rm-nav">` +
+    `<a id="rmWaze" class="rm-bignav waze" target="_blank" rel="noopener">🚗 Ir con Waze</a>` +
+    `<a id="rmMaps" class="rm-bignav gmaps" target="_blank" rel="noopener">🗺️ Maps</a></div>`;
+  $("rmPos").textContent = `Parada ${rmIndex + 1} de ${N}`;
+  $("rmName").textContent = u.name;
+  $("rmAddr").textContent = [u.direccion, u.comuna].filter(Boolean).join(", ");
+  $("rmDist").textContent = `↪ ${u.dist.toFixed(2)} km desde la anterior`;
+  $("rmWaze").href = wazeUrl(u.lat, u.lon);
+  $("rmMaps").href = mapsStopUrl(u.lat, u.lon);
+}
+
+$("btnIniciarRuta").addEventListener("click", () => {
+  if (!state.resultado.length) return toast("Primero genera la ruta");
+  rmIndex = nextPendingIndex(0);
+  $("routeMode").classList.remove("hidden");
+  renderStep();
+});
+
+$("rmExit").addEventListener("click", () => {
+  $("routeMode").classList.add("hidden");
+  renderResultado(state.resultado, _lastFallidas); // refresca la lista con lo entregado
+});
+
+$("rmDone").addEventListener("click", () => {
+  if (rmIndex < 0) return;
+  const set = loadDone();
+  set.add(doneKey(state.resultado[rmIndex]));
+  saveDone(set);
+  rmIndex = nextPendingIndex(rmIndex);
+  renderStep();
+});
+
+$("rmSkip").addEventListener("click", () => {
+  if (rmIndex < 0) return;
+  const sig = nextPendingIndex(rmIndex + 1);
+  if (sig === rmIndex) return toast("Es la única parada pendiente");
+  rmIndex = sig;
+  renderStep();
+});
 
 /* ---------- Ruta completa en Google Maps (multi-parada) ---------- */
 $("btnMapsAll").addEventListener("click", () => {

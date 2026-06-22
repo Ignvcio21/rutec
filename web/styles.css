@@ -225,6 +225,46 @@ main { padding: 16px; max-width: 720px; margin: 0 auto; display: grid; gap: 14px
 
 .hidden { display: none !important; }
 
+/* ---- Modo ruta paso a paso ---- */
+.route-mode {
+  position: fixed;
+  inset: 0;
+  background: linear-gradient(180deg, #0b1220 0%, #0d1426 100%);
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  padding: max(16px, env(safe-area-inset-top)) 16px calc(16px + env(safe-area-inset-bottom));
+}
+.rm-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+.rm-progress { font-size: 15px; color: var(--muted); font-weight: 600; }
+.rm-exit { background: var(--card-2); border: 1px solid var(--line); color: var(--ink); padding: 8px 14px; border-radius: 10px; font-size: 14px; cursor: pointer; }
+.rm-card {
+  flex: 1;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 24px 20px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  text-align: center;
+  gap: 6px;
+}
+.rm-pos { font-size: 14px; color: var(--accent); font-weight: 700; }
+.rm-name { font-size: 26px; font-weight: 800; line-height: 1.2; }
+.rm-addr { font-size: 18px; color: var(--muted); margin-top: 4px; }
+.rm-dist { font-size: 14px; color: var(--accent); margin: 8px 0 18px; }
+.rm-nav { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+.rm-bignav { padding: 16px 22px; border-radius: 14px; font-size: 18px; font-weight: 800; text-decoration: none; }
+.rm-actions { display: flex; gap: 10px; margin-top: 16px; }
+.rm-actions .btn { flex: 1; padding: 18px; font-size: 17px; }
+.rm-done-all { font-size: 22px; font-weight: 800; color: var(--ok); }
+
 .toast {
   position: fixed;
   left: 50%;
