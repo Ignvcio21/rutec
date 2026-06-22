@@ -79,6 +79,30 @@ function haversine(lat1, lon1, lat2, lon2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+// Ordena la ruta de forma ENCADENADA (vecino más cercano): desde el origen va a
+// la parada más cercana, desde ahí a la siguiente más cercana, etc. Evita zigzags.
+// A cada parada le asigna `dist` = tramo recorrido desde el punto anterior.
+function ordenarRutaCercana(stops) {
+  const pendientes = stops.slice();
+  const ruta = [];
+  let cx = state.origen.lat;
+  let cy = state.origen.lon;
+  while (pendientes.length) {
+    let mejor = 0;
+    let mejorDist = Infinity;
+    for (let i = 0; i < pendientes.length; i++) {
+      const d = haversine(cx, cy, pendientes[i].lat, pendientes[i].lon);
+      if (d < mejorDist) { mejorDist = d; mejor = i; }
+    }
+    const siguiente = pendientes.splice(mejor, 1)[0];
+    siguiente.dist = mejorDist; // tramo desde la parada anterior (o el origen)
+    ruta.push(siguiente);
+    cx = siguiente.lat;
+    cy = siguiente.lon;
+  }
+  return ruta;
+}
+
 /* ---------- API helpers ---------- */
 // Geocodificación directa desde el navegador a OpenStreetMap (Nominatim).
 // Con caché y un máximo de ~1 consulta por segundo (política de uso de OSM).
@@ -359,16 +383,16 @@ $("btnProcesar").addEventListener("click", async () => {
     }
   }
 
-  // 3) Distancia + orden
-  for (const u of ubicadas) u.dist = haversine(state.origen.lat, state.origen.lon, u.lat, u.lon);
-  ubicadas.sort((a, b) => a.dist - b.dist);
-  state.resultado = ubicadas;
+  // 3) Orden encadenado (vecino más cercano) — ruta de manejo más corta
+  state.resultado = ordenarRutaCercana(ubicadas);
+  const totalKm = state.resultado.reduce((s, u) => s + u.dist, 0);
 
   prog.classList.add("hidden");
   bar.style.width = "0%";
-  setStatus($("procesarStatus"), `✓ Listo: ${ubicadas.length} ubicadas, ${fallidas.length} por revisar`, ubicadas.length ? "ok" : "bad");
+  const totalTxt = state.resultado.length ? ` · ~${totalKm.toFixed(1)} km total` : "";
+  setStatus($("procesarStatus"), `✓ Listo: ${state.resultado.length} ubicadas, ${fallidas.length} por revisar${totalTxt}`, state.resultado.length ? "ok" : "bad");
 
-  renderResultado(ubicadas, fallidas);
+  renderResultado(state.resultado, fallidas);
 });
 
 /* ==========================================================================
@@ -426,7 +450,7 @@ function renderResultado(ubicadas, fallidas) {
       `<label class="chk" title="Marcar como entregado"><input type="checkbox" ${isDone ? "checked" : ""} /></label>` +
       `<div class="name">${u.name}</div>` +
       `<div class="addr">${[u.direccion, u.comuna].filter(Boolean).join(", ")}</div>` +
-      `<div class="meta">📏 ${u.dist.toFixed(2)} km · ${u.score < 1 && u.score > 0 ? "coincidencia " + Math.round(u.score * 100) + "%" : "directo"}</div>` +
+      `<div class="meta">↪ ${u.dist.toFixed(2)} km desde la anterior · ${u.score < 1 && u.score > 0 ? "coincidencia " + Math.round(u.score * 100) + "%" : "directo"}</div>` +
       `<div class="acts">
          <a class="mini waze" href="${wazeUrl(u.lat, u.lon)}" target="_blank" rel="noopener">🚗 Waze</a>
          <a class="mini gmaps" href="${mapsStopUrl(u.lat, u.lon)}" target="_blank" rel="noopener">🗺️ Maps</a>
@@ -461,9 +485,9 @@ function renderResultado(ubicadas, fallidas) {
         if (!q) return toast("Escribe la dirección");
         const g = await apiGeocode(q, f.comuna);
         if (g.ok) {
-          const u = { ...f, direccion: q, lat: g.lat, lon: g.lon, dist: haversine(state.origen.lat, state.origen.lon, g.lat, g.lon) };
+          const u = { ...f, direccion: q, lat: g.lat, lon: g.lon };
           state.resultado.push(u);
-          state.resultado.sort((a, b) => a.dist - b.dist);
+          state.resultado = ordenarRutaCercana(state.resultado);
           renderResultado(state.resultado, fallidas.filter((x) => x !== f));
           toast("Agregado y reordenado");
         } else {
