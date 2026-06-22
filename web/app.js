@@ -178,12 +178,12 @@ async function ordenarRutaReal(origen, stops) {
 const _geoCache = {};
 let _lastGeo = 0;
 
-// Enfoca TODAS las búsquedas en la zona de Talca / Región del Maule, para que
-// el buscador NO traiga calles del mismo nombre en otras partes de Chile.
+// Enfoca TODAS las búsquedas en la REGIÓN DEL MAULE (Talca, costa: Pelluhue,
+// Curanipe, Constitución, etc., y hasta la cordillera), para no traer calles del
+// mismo nombre en otras regiones de Chile, pero SIN excluir la costa.
 // Formato Nominatim: "lon1,lat1,lon2,lat2" (dos esquinas del recuadro).
-// (Cubre Talca y comunas cercanas. Ajustable si algún día cambia la zona.)
-const GEO_VIEWBOX = "-72.20,-34.95,-71.10,-35.95";
-const GEO_AREA_DEFECTO = "Talca"; // si la factura no trae comuna, se asume Talca
+const GEO_VIEWBOX = "-72.85,-34.70,-70.30,-36.55";
+const GEO_AREA_DEFECTO = ""; // no forzar comuna: se usa la que traiga la factura
 
 // Extrae "calle de grilla" -> ej: "5½ Poniente" => "5 poniente"; null si no aplica.
 function gridKey(s) {
@@ -523,29 +523,47 @@ $("facturaFile").addEventListener("change", async (e) => {
   const grupos = [];
   for (let i = 0; i < files.length; i += CHUNK) grupos.push(files.slice(i, i + CHUNK));
 
-  let found = 0, errores = 0;
-  for (let c = 0; c < grupos.length; c++) {
-    setStatus($("facturaStatus"), `Leyendo facturas con IA... (grupo ${c + 1}/${grupos.length})`, "work");
-    try {
-      const data = await apiOcr(grupos[c], "factura");
-      const arr = data.facturas || (data.cliente ? [data] : []);
-      for (const f of arr) {
-        const item = {
-          cliente: (f.cliente || "").trim(),
-          direccion: (f.direccion || "").trim(),
-          comuna: (f.comuna || "").trim(),
-          nro: (f.nro || "").trim(),
-        };
-        if (item.cliente || item.direccion) { state.facturas.push(item); found++; }
+  let found = 0;
+  // Lista de grupos pendientes; los que fallen (IA saturada) se reintentan en rondas.
+  let pendientes = grupos.map((g, i) => ({ g, i }));
+  const MAX_RONDAS = 4;
+
+  for (let ronda = 0; ronda < MAX_RONDAS && pendientes.length; ronda++) {
+    if (ronda > 0) {
+      // La IA estaba saturada (503): esperar y reintentar SOLO los grupos que fallaron.
+      for (let s = 25; s > 0; s--) {
+        setStatus($("facturaStatus"), `IA saturada. Reintentando ${pendientes.length} grupo(s) en ${s}s...`, "work");
+        await new Promise((r) => setTimeout(r, 1000));
       }
-    } catch (err) {
-      errores++;
-      toast(err.message);
     }
+    const fallaron = [];
+    for (let j = 0; j < pendientes.length; j++) {
+      const { g, i } = pendientes[j];
+      setStatus($("facturaStatus"), `Leyendo facturas con IA... ${ronda > 0 ? "(reintento) " : ""}grupo ${i + 1}/${grupos.length}`, "work");
+      try {
+        const data = await apiOcr(g, "factura");
+        const arr = data.facturas || (data.cliente ? [data] : []);
+        for (const f of arr) {
+          const item = {
+            cliente: (f.cliente || "").trim(),
+            direccion: (f.direccion || "").trim(),
+            comuna: (f.comuna || "").trim(),
+            nro: (f.nro || "").trim(),
+          };
+          if (item.cliente || item.direccion) { state.facturas.push(item); found++; }
+        }
+      } catch (err) {
+        fallaron.push({ g, i }); // reintentar en la siguiente ronda
+      }
+    }
+    pendientes = fallaron;
   }
+
   renderFacturas();
-  const extra = errores ? ` · ${errores} grupo(s) con error` : "";
-  setStatus($("facturaStatus"), `✓ ${found} factura(s) leídas (total: ${state.facturas.length})${extra}`, found ? "ok" : "bad");
+  const extra = pendientes.length
+    ? ` · ⚠️ ${pendientes.length} grupo(s) no se leyeron (IA muy saturada). Vuelve a subir esas fotos en un rato.`
+    : "";
+  setStatus($("facturaStatus"), `✓ ${found} factura(s) leídas (total: ${state.facturas.length})${extra}`, pendientes.length ? "bad" : "ok");
   e.target.value = "";
 });
 
