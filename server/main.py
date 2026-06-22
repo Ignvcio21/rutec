@@ -81,12 +81,17 @@ app = FastAPI(title="Rutec", version="1.0.0")
 # Prompts para la IA de vision
 # ----------------------------------------------------------------------------
 PROMPT_PLANTILLA = (
-    "Eres un asistente que lee una hoja de ruta / plantilla de reparto. "
-    "La hoja contiene una lista de nombres de clientes o almacenes a visitar, "
-    "normalmente SIN direcciones. "
+    "Eres un asistente que lee una planilla / hoja de ruta / liquidacion de reparto. "
+    "Es una tabla con una fila por cliente a visitar. De cada fila extrae, si existen: "
+    "el NUMERO de factura o documento, el NOMBRE del cliente, y el VENDEDOR (codigo o nombre). "
+    "La hoja normalmente NO trae direcciones. "
     "Devuelve UNICAMENTE un JSON valido con esta forma exacta:\n"
-    '{"clientes": ["NOMBRE 1", "NOMBRE 2", ...]}\n'
-    "Incluye cada nombre tal como aparece, en mayusculas, sin numeros de fila ni vinetas. "
+    '{"filas": [{"nro": "...", "cliente": "...", "vendedor": "..."}]}\n'
+    "Reglas:\n"
+    "- 'nro' = numero de factura/documento de esa fila (solo los digitos). Si no hay, cadena vacia.\n"
+    "- 'cliente' = nombre del cliente tal como aparece, en mayusculas.\n"
+    "- 'vendedor' = codigo o nombre del vendedor de esa fila (ej. '010 GUILLERMO GARCIA'). Si no hay, cadena vacia.\n"
+    "Una fila por cada renglon, aunque el mismo cliente se repita con distinto numero. "
     "No agregues explicaciones ni texto fuera del JSON."
 )
 

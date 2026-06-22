@@ -4,12 +4,43 @@
 
 const state = {
   origen: null,            // {lat, lon, label}
-  plantilla: [],           // ["NOMBRE 1", ...]
+  plantilla: [],           // [{nro, cliente, vendedor}]
   facturas: [],            // [{cliente, direccion, comuna, nro}]
-  resultado: [],           // [{name, direccion, comuna, nro, lat, lon, dist}]
+  resultado: [],           // [{name, direccion, comuna, nro, vendedor, lat, lon, dist}]
   ocrReady: false,
   country: "Chile",
 };
+
+/* ---------- sesión: guardar/restaurar en el navegador ---------- */
+const SESSION_KEY = "rutec_session";
+function saveSession() {
+  try {
+    localStorage.setItem(SESSION_KEY, JSON.stringify({
+      origen: state.origen,
+      plantilla: state.plantilla,
+      facturas: state.facturas,
+      resultado: state.resultado,
+      country: state.country,
+    }));
+  } catch {}
+}
+function loadSession() {
+  try {
+    const s = JSON.parse(localStorage.getItem(SESSION_KEY) || "null");
+    if (!s) return false;
+    state.origen = s.origen || null;
+    state.plantilla = s.plantilla || [];
+    state.facturas = s.facturas || [];
+    state.resultado = s.resultado || [];
+    state.country = s.country || state.country;
+    return true;
+  } catch { return false; }
+}
+
+// Normaliza un número de factura para comparar (solo dígitos, sin ceros a la izq.)
+function normNro(s) {
+  return String(s || "").replace(/\D/g, "").replace(/^0+/, "");
+}
 
 /* ---------- utilidades DOM ---------- */
 const $ = (id) => document.getElementById(id);
@@ -248,6 +279,7 @@ $("btnGps").addEventListener("click", () => {
     state.origen = { lat: pos.coords.latitude, lon: pos.coords.longitude, label: "Mi ubicación (GPS)" };
     setStatus($("origenStatus"), `✓ Origen: tu ubicación actual (${state.origen.lat.toFixed(4)}, ${state.origen.lon.toFixed(4)})`, "ok");
     refreshProcesar();
+    saveSession();
   };
   const onErr = (err) => {
     let m = err.message || "Error desconocido";
@@ -279,6 +311,7 @@ $("btnOrigen").addEventListener("click", async () => {
     state.origen = { lat: g.lat, lon: g.lon, label: g.display };
     setStatus($("origenStatus"), "✓ Origen: " + g.display, "ok");
     refreshProcesar();
+    saveSession();
   } else {
     setStatus($("origenStatus"), "No encontré esa dirección. Sé más específico.", "bad");
   }
@@ -293,11 +326,24 @@ $("plantillaFile").addEventListener("change", async (e) => {
   setStatus($("plantillaStatus"), "Leyendo plantilla con IA...", "work");
   try {
     const data = await apiOcr(file, "plantilla");
-    const nombres = (data.clientes || data.nombres || []).map((s) => String(s).trim()).filter(Boolean);
-    // agregar sin duplicar
-    for (const n of nombres) if (!state.plantilla.includes(n)) state.plantilla.push(n);
+    // Acepta el formato nuevo {filas:[{nro,cliente,vendedor}]} y el viejo {clientes:[...]}.
+    let filas = [];
+    if (Array.isArray(data.filas)) {
+      filas = data.filas.map((f) => ({
+        nro: String(f.nro || "").trim(),
+        cliente: String(f.cliente || "").trim().toUpperCase(),
+        vendedor: String(f.vendedor || "").trim(),
+      }));
+    } else {
+      filas = (data.clientes || data.nombres || []).map((s) => ({ nro: "", cliente: String(s).trim().toUpperCase(), vendedor: "" }));
+    }
+    filas = filas.filter((f) => f.cliente);
+    for (const f of filas) {
+      const dup = state.plantilla.some((p) => (f.nro && p.nro === f.nro) || (!f.nro && p.cliente === f.cliente && !p.nro));
+      if (!dup) state.plantilla.push(f);
+    }
     renderPlantilla();
-    setStatus($("plantillaStatus"), `✓ ${nombres.length} nombre(s) leídos`, "ok");
+    setStatus($("plantillaStatus"), `✓ ${filas.length} fila(s) leídas`, "ok");
   } catch (err) {
     setStatus($("plantillaStatus"), "✗ " + err.message, "bad");
   } finally {
@@ -308,18 +354,20 @@ $("plantillaFile").addEventListener("change", async (e) => {
 function renderPlantilla() {
   const box = $("plantillaList");
   box.innerHTML = "";
-  state.plantilla.forEach((n, i) => {
+  state.plantilla.forEach((p, i) => {
     const chip = document.createElement("span");
     chip.className = "chip";
-    chip.innerHTML = `${n} <button title="Quitar">✕</button>`;
+    const vend = p.vendedor ? ` · ${p.vendedor.split(" ")[0]}` : "";
+    chip.innerHTML = `${p.cliente}${vend} <button title="Quitar">✕</button>`;
     chip.querySelector("button").onclick = () => {
       state.plantilla.splice(i, 1);
       renderPlantilla();
-      refreshProcesar();
+      saveSession();
     };
     box.appendChild(chip);
   });
   refreshProcesar();
+  saveSession();
 }
 
 /* ==========================================================================
@@ -371,6 +419,7 @@ function renderFacturas() {
     box.appendChild(row);
   });
   refreshProcesar();
+  saveSession();
 }
 
 /* ==========================================================================
@@ -392,25 +441,39 @@ $("btnProcesar").addEventListener("click", async () => {
   const usadas = new Set();
 
   if (state.plantilla.length) {
-    for (const nombre of state.plantilla) {
-      let best = -1, bestScore = 0;
-      state.facturas.forEach((f, idx) => {
-        if (usadas.has(idx)) return;
-        const sc = similarity(nombre, f.cliente);
-        if (sc > bestScore) { bestScore = sc; best = idx; }
-      });
-      if (best >= 0 && bestScore >= MATCH_THRESHOLD) {
+    for (const fila of state.plantilla) {
+      const nombre = fila.cliente || "";
+      let best = -1, bestScore = 0, metodo = "";
+
+      // 1) Cruce por N° de factura (exacto) — el más confiable
+      const keyNro = normNro(fila.nro);
+      if (keyNro) {
+        const idx = state.facturas.findIndex((f, i) => !usadas.has(i) && normNro(f.nro) === keyNro);
+        if (idx >= 0) { best = idx; bestScore = 1; metodo = "nº"; }
+      }
+      // 2) Si no calzó por número, intenta por nombre (respaldo)
+      if (best < 0) {
+        let bScore = 0, bIdx = -1;
+        state.facturas.forEach((f, idx) => {
+          if (usadas.has(idx)) return;
+          const sc = similarity(nombre, f.cliente);
+          if (sc > bScore) { bScore = sc; bIdx = idx; }
+        });
+        if (bIdx >= 0 && bScore >= MATCH_THRESHOLD) { best = bIdx; bestScore = bScore; metodo = "nombre"; }
+      }
+
+      if (best >= 0) {
         usadas.add(best);
         const f = state.facturas[best];
-        paradas.push({ name: nombre, direccion: f.direccion, comuna: f.comuna, nro: f.nro, score: bestScore });
+        paradas.push({ name: nombre || f.cliente, direccion: f.direccion, comuna: f.comuna, nro: fila.nro || f.nro, vendedor: fila.vendedor || "", score: bestScore, metodo });
       } else {
-        paradas.push({ name: nombre, direccion: "", comuna: "", nro: "", score: 0, sinFactura: true });
+        paradas.push({ name: nombre, direccion: "", comuna: "", nro: fila.nro || "", vendedor: fila.vendedor || "", score: 0, sinFactura: true });
       }
     }
   } else {
     // sin plantilla: usar las facturas directamente
     paradas = state.facturas.map((f) => ({
-      name: f.cliente, direccion: f.direccion, comuna: f.comuna, nro: f.nro, score: 1,
+      name: f.cliente, direccion: f.direccion, comuna: f.comuna, nro: f.nro, vendedor: "", score: 1, metodo: "directo",
     }));
   }
 
@@ -433,6 +496,7 @@ $("btnProcesar").addEventListener("click", async () => {
 
   // 3) Orden encadenado (vecino más cercano) — ruta de manejo más corta
   state.resultado = ordenarRutaCercana(ubicadas);
+  saveSession();
   const totalKm = state.resultado.reduce((s, u) => s + u.dist, 0);
 
   prog.classList.add("hidden");
@@ -483,6 +547,12 @@ function mapsStopUrl(lat, lon) {
   return url;
 }
 
+function metodoTxt(u) {
+  if (u.metodo === "nº") return "✔ por N° factura";
+  if (u.metodo === "nombre") return `~ por nombre ${Math.round((u.score || 0) * 100)}%`;
+  return "directo";
+}
+
 let _lastFallidas = [];
 function renderResultado(ubicadas, fallidas) {
   _lastFallidas = fallidas || [];
@@ -500,7 +570,7 @@ function renderResultado(ubicadas, fallidas) {
       `<label class="chk" title="Marcar como entregado"><input type="checkbox" ${isDone ? "checked" : ""} /></label>` +
       `<div class="name">${u.name}</div>` +
       `<div class="addr">${[u.direccion, u.comuna].filter(Boolean).join(", ")}</div>` +
-      `<div class="meta">↪ ${u.dist.toFixed(2)} km desde la anterior · ${u.score < 1 && u.score > 0 ? "coincidencia " + Math.round(u.score * 100) + "%" : "directo"}</div>` +
+      `<div class="meta">↪ ${u.dist.toFixed(2)} km desde la anterior · ${metodoTxt(u)}${u.vendedor ? " · 👤 " + u.vendedor.split(" ")[0] : ""}</div>` +
       `<div class="acts">
          <a class="mini waze" href="${wazeUrl(u.lat, u.lon)}" target="_blank" rel="noopener">🚗 Waze</a>
          <a class="mini gmaps" href="${mapsStopUrl(u.lat, u.lon)}" target="_blank" rel="noopener">🗺️ Maps</a>
@@ -538,6 +608,7 @@ function renderResultado(ubicadas, fallidas) {
           const u = { ...f, direccion: q, lat: g.lat, lon: g.lon };
           state.resultado.push(u);
           state.resultado = ordenarRutaCercana(state.resultado);
+          saveSession();
           renderResultado(state.resultado, fallidas.filter((x) => x !== f));
           toast("Agregado y reordenado");
         } else {
@@ -657,10 +728,12 @@ $("btnCsv").addEventListener("click", () => {
   a.click();
 });
 
-/* ---------- Reset ---------- */
+/* ---------- Reset (Empezar de nuevo) ---------- */
 $("btnReset").addEventListener("click", () => {
-  if (!confirm("¿Empezar de nuevo? Se borrará todo lo cargado.")) return;
+  if (!confirm("¿Empezar de nuevo? Se borrará la planilla, las facturas, la ruta y lo marcado.")) return;
   state.plantilla = []; state.facturas = []; state.resultado = []; state.origen = null;
+  localStorage.removeItem(SESSION_KEY);   // borra la sesión guardada
+  localStorage.removeItem("rutec_done");  // borra el checklist de entregas
   renderPlantilla(); renderFacturas();
   $("step-resultado").classList.add("hidden");
   setStatus($("origenStatus"), ""); setStatus($("plantillaStatus"), ""); setStatus($("facturaStatus"), ""); setStatus($("procesarStatus"), "");
@@ -688,6 +761,20 @@ async function init() {
   }
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("sw.js").catch(() => {});
+  }
+
+  // Restaurar sesión guardada (sobrevive a recargas y cierres del navegador)
+  if (loadSession()) {
+    renderPlantilla();
+    renderFacturas();
+    if (state.origen) {
+      setStatus($("origenStatus"), "✓ Origen: " + (state.origen.label || "guardado"), "ok");
+    }
+    if (state.resultado && state.resultado.length) {
+      renderResultado(state.resultado, []);
+      setStatus($("procesarStatus"), `✓ Ruta guardada: ${state.resultado.length} paradas`, "ok");
+    }
+    refreshProcesar();
   }
 }
 init();
