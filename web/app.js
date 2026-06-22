@@ -7,6 +7,7 @@ const state = {
   plantilla: [],           // [{nro, cliente, vendedor}]
   facturas: [],            // [{cliente, direccion, comuna, nro}]
   resultado: [],           // [{name, direccion, comuna, nro, vendedor, lat, lon, dist}]
+  fallidas: [],            // [{name, direccion, comuna, motivo}] paradas no ubicadas
   ocrReady: false,
   country: "Chile",
 };
@@ -20,6 +21,7 @@ function saveSession() {
       plantilla: state.plantilla,
       facturas: state.facturas,
       resultado: state.resultado,
+      fallidas: state.fallidas,
       country: state.country,
     }));
   } catch {}
@@ -32,6 +34,7 @@ function loadSession() {
     state.plantilla = s.plantilla || [];
     state.facturas = s.facturas || [];
     state.resultado = s.resultado || [];
+    state.fallidas = s.fallidas || [];
     state.country = s.country || state.country;
     return true;
   } catch { return false; }
@@ -625,13 +628,20 @@ $("btnProcesar").addEventListener("click", async () => {
   // 3) Orden por CARRETERA real (OSRM); si falla, cae a línea recta
   setStatus($("procesarStatus"), "Calculando la mejor ruta por carretera...", "work");
   state.resultado = await ordenarRutaReal(state.origen, ubicadas);
+  state.fallidas = fallidas;
   saveSession();
   const totalKm = state.resultado.reduce((s, u) => s + u.dist, 0);
 
   prog.classList.add("hidden");
   bar.style.width = "0%";
+  // Desglose claro del por qué de las que faltan
+  const sinFactura = fallidas.filter((f) => f.sinFactura).length;
+  const sinUbicar = fallidas.length - sinFactura;
+  const detalle = fallidas.length
+    ? ` · ${fallidas.length} por revisar (${sinFactura} sin factura, ${sinUbicar} sin ubicar)`
+    : "";
   const totalTxt = state.resultado.length ? ` · ~${totalKm.toFixed(1)} km total` : "";
-  setStatus($("procesarStatus"), `✓ Listo: ${state.resultado.length} ubicadas, ${fallidas.length} por revisar${totalTxt}`, state.resultado.length ? "ok" : "bad");
+  setStatus($("procesarStatus"), `✓ ${state.resultado.length} en ruta${detalle}${totalTxt}`, state.resultado.length ? "ok" : "bad");
 
   renderResultado(state.resultado, fallidas);
 });
@@ -682,9 +692,8 @@ function metodoTxt(u) {
   return "directo";
 }
 
-let _lastFallidas = [];
 function renderResultado(ubicadas, fallidas) {
-  _lastFallidas = fallidas || [];
+  state.fallidas = fallidas || [];
   const sec = $("step-resultado");
   sec.classList.remove("hidden");
   const list = $("resultList");
@@ -737,8 +746,8 @@ function renderResultado(ubicadas, fallidas) {
           const u = { ...f, direccion: q, lat: g.lat, lon: g.lon };
           state.resultado.push(u);
           state.resultado = await ordenarRutaReal(state.origen, state.resultado);
-          saveSession();
           renderResultado(state.resultado, fallidas.filter((x) => x !== f));
+          saveSession(); // guarda ruta + fallidas actualizadas
           toast("Agregado y reordenado");
         } else {
           toast("Aún no la encuentro, prueba con otra referencia");
@@ -809,7 +818,7 @@ $("btnIniciarRuta").addEventListener("click", () => {
 
 $("rmExit").addEventListener("click", () => {
   $("routeMode").classList.add("hidden");
-  renderResultado(state.resultado, _lastFallidas); // refresca la lista con lo entregado
+  renderResultado(state.resultado, state.fallidas); // refresca la lista con lo entregado
 });
 
 $("rmDone").addEventListener("click", () => {
@@ -860,7 +869,7 @@ $("btnCsv").addEventListener("click", () => {
 /* ---------- Reset (Empezar de nuevo) ---------- */
 $("btnReset").addEventListener("click", () => {
   if (!confirm("¿Empezar de nuevo? Se borrará la planilla, las facturas, la ruta y lo marcado.")) return;
-  state.plantilla = []; state.facturas = []; state.resultado = []; state.origen = null;
+  state.plantilla = []; state.facturas = []; state.resultado = []; state.fallidas = []; state.origen = null;
   localStorage.removeItem(SESSION_KEY);   // borra la sesión guardada
   localStorage.removeItem("rutec_done");  // borra el checklist de entregas
   renderPlantilla(); renderFacturas();
@@ -900,8 +909,9 @@ async function init() {
       setStatus($("origenStatus"), "✓ Origen: " + (state.origen.label || "guardado"), "ok");
     }
     if (state.resultado && state.resultado.length) {
-      renderResultado(state.resultado, []);
-      setStatus($("procesarStatus"), `✓ Ruta guardada: ${state.resultado.length} paradas`, "ok");
+      renderResultado(state.resultado, state.fallidas || []);
+      const f = (state.fallidas || []).length;
+      setStatus($("procesarStatus"), `✓ Ruta guardada: ${state.resultado.length} paradas${f ? ` · ${f} por revisar` : ""}`, "ok");
     }
     refreshProcesar();
   }
