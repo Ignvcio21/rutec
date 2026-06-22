@@ -1,0 +1,88 @@
+================================================================
+   RUTEC  -  Ordena tu reparto del mas cercano al mas lejano
+================================================================
+
+QUE HACE
+--------
+1. Subes una foto de la PLANTILLA (los nombres de los clientes del dia).
+2. Subes fotos de las FACTURAS / GUIAS (traen direccion y comuna).
+3. La app cruza los nombres con las facturas, ubica cada direccion en el
+   mapa y te ordena las paradas de la MAS CERCANA a la MAS LEJANA.
+4. Te da un boton de WAZE por cada parada y un boton de GOOGLE MAPS con
+   toda la ruta.
+
+
+----------------------------------------------------------------
+PASO 1 - PONER TU CLAVE DE GOOGLE GEMINI (solo la primera vez)
+----------------------------------------------------------------
+La app usa la inteligencia artificial de Google Gemini (GRATIS) para
+leer las fotos. Necesitas una "API key". Como conseguirla:
+
+  1. Entra a:  https://aistudio.google.com/apikey
+  2. Inicia sesion con tu cuenta de Google (Gmail).
+  3. Toca "Create API key" (Crear clave de API).
+  4. Copia esa clave (es una linea larga de letras y numeros).
+  5. Abre el archivo  .env  (en esta misma carpeta) con el Bloc de notas.
+  6. Pega tu clave despues del signo =, asi:
+
+         OCR_API_KEY=AIzaSy...tu_clave...
+
+  7. Guarda el archivo.
+
+  NOTA: El nivel gratuito de Gemini NO pide tarjeta y alcanza de sobra
+  para el uso diario de reparto.
+
+
+----------------------------------------------------------------
+PASO 2 - ABRIR LA APP EN EL PC
+----------------------------------------------------------------
+  - Haz doble clic en  Rutec.exe
+  - Se abrira solo en tu navegador (http://localhost:8000).
+  - Si arriba a la derecha dice "IA: lista", todo esta bien.
+    Si dice "IA: falta key", revisa el Paso 1.
+
+  (Deja la ventanita negra abierta mientras usas la app; al cerrarla,
+   se apaga el servidor.)
+
+
+----------------------------------------------------------------
+PASO 3 - USARLA EN EL TELEFONO (misma red WiFi)
+----------------------------------------------------------------
+  1. Abre Rutec.exe en el PC (Paso 2).
+  2. Averigua la IP del PC: abre "Simbolo del sistema" y escribe  ipconfig
+     Busca "Direccion IPv4", algo como  192.168.1.45
+  3. En el telefono (conectado a la MISMA WiFi), abre el navegador y entra a:
+
+         http://192.168.1.45:8000
+
+     (reemplaza por la IP de tu PC)
+  4. En el menu del navegador del telefono elige "Agregar a pantalla de
+     inicio" para tenerla como una app con icono.
+
+  Asi puedes tomar las fotos con la camara del telefono directamente.
+
+
+----------------------------------------------------------------
+COMO SE USA (3 pasos en pantalla)
+----------------------------------------------------------------
+  1) PUNTO DE PARTIDA: toca "Usar mi ubicacion (GPS)" en el telefono,
+     o escribe una direccion de origen.
+  2) PLANTILLA: toma foto de la hoja con los nombres.
+  3) FACTURAS: toma fotos de las facturas (puedes varias a la vez).
+  4) Toca "Generar ruta optima".
+
+  Veras la lista ordenada con la distancia de cada parada y los botones
+  de Waze y Google Maps. Si alguna direccion no se ubico, aparece abajo
+  para que la corrijas a mano.
+
+
+----------------------------------------------------------------
+PROBLEMAS FRECUENTES
+----------------------------------------------------------------
+- "IA: falta key"  -> revisa el archivo .env (Paso 1) y reabre Rutec.exe.
+- En el telefono no abre -> el PC y el telefono deben estar en la MISMA
+  WiFi, y Rutec.exe debe estar abierto en el PC. Quiza Windows pida
+  permitir el acceso de red la primera vez: acepta.
+- Una direccion no se ubica -> escribela mas completa en la seccion
+  "no ubicados" y toca "Ubicar".
+================================================================

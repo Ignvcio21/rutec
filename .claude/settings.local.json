@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell($base = \"$env:LOCALAPPDATA\\\\Programs\\\\Python\\\\Python312\"; $py = Join-Path $base \"python.exe\"; if\\(Test-Path $py\\){ \"FOUND: $py\"; & $py --version; & $py -m pip --version } else { \"Not at $py - searching...\"; Get-ChildItem \"$env:LOCALAPPDATA\\\\Programs\\\\Python\" -ErrorAction SilentlyContinue | Select-Object Name })"
+    ]
+  }
+}

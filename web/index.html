@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#0f766e" />
+  <title>Rutec · Rutas de reparto</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" href="icon-192.png" />
+  <link rel="apple-touch-icon" href="icon-192.png" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <span class="logo">📍</span>
+      <div>
+        <h1>Rutec</h1>
+        <p class="tagline">Ordena tu reparto del más cercano al más lejano</p>
+      </div>
+    </div>
+    <span id="ocrBadge" class="badge badge-warn" title="Estado del lector de fotos">IA: ...</span>
+  </header>
+
+  <main>
+    <!-- PASO 1: ORIGEN -->
+    <section class="card" id="step-origen">
+      <h2><span class="num">1</span> Punto de partida</h2>
+      <p class="hint">Desde dónde sale el vendedor.</p>
+      <div class="row">
+        <button id="btnGps" class="btn btn-ghost">📡 Usar mi ubicación (GPS)</button>
+      </div>
+      <div class="or">o escribe la dirección</div>
+      <div class="row">
+        <input id="origenInput" type="text" placeholder="Ej: Plaza de Armas, Talca" />
+        <button id="btnOrigen" class="btn">Fijar</button>
+      </div>
+      <p id="origenStatus" class="status"></p>
+    </section>
+
+    <!-- PASO 2: PLANTILLA -->
+    <section class="card" id="step-plantilla">
+      <h2><span class="num">2</span> Plantilla (nombres del día)</h2>
+      <p class="hint">Foto de la hoja con los <b>nombres</b> de los almacenes (sin direcciones).</p>
+      <label class="filebtn">
+        📷 Tomar / subir foto de la plantilla
+        <input id="plantillaFile" type="file" accept="image/*" capture="environment" hidden />
+      </label>
+      <div id="plantillaList" class="chips"></div>
+      <p id="plantillaStatus" class="status"></p>
+    </section>
+
+    <!-- PASO 3: FACTURAS -->
+    <section class="card" id="step-facturas">
+      <h2><span class="num">3</span> Facturas / guías (direcciones)</h2>
+      <p class="hint">Una o varias fotos. De aquí se sacan <b>cliente + dirección + comuna</b>.</p>
+      <label class="filebtn">
+        📷 Tomar / subir fotos de facturas
+        <input id="facturaFile" type="file" accept="image/*" capture="environment" multiple hidden />
+      </label>
+      <div id="facturaList" class="table-wrap"></div>
+      <p id="facturaStatus" class="status"></p>
+    </section>
+
+    <!-- PASO 4: PROCESAR -->
+    <section class="card" id="step-procesar">
+      <h2><span class="num">4</span> Calcular ruta</h2>
+      <p class="hint">Cruza nombres con facturas, ubica en el mapa y ordena por cercanía.</p>
+      <button id="btnProcesar" class="btn btn-big" disabled>🚀 Generar ruta óptima</button>
+      <div id="progress" class="progress hidden"><div id="progressBar"></div></div>
+      <p id="procesarStatus" class="status"></p>
+    </section>
+
+    <!-- RESULTADO -->
+    <section class="card hidden" id="step-resultado">
+      <h2>🧭 Ruta ordenada</h2>
+      <div class="row result-actions">
+        <button id="btnMapsAll" class="btn">🗺️ Ruta completa en Google Maps</button>
+        <button id="btnCsv" class="btn btn-ghost">⬇️ Exportar CSV</button>
+      </div>
+      <p id="doneCounter" class="done-counter"></p>
+      <ol id="resultList" class="result-list"></ol>
+      <details id="unmatchedBox" class="unmatched hidden">
+        <summary>⚠️ No ubicados (revisar manualmente)</summary>
+        <div id="unmatchedList"></div>
+      </details>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <span>Rutec · OpenStreetMap + IA · </span>
+    <button id="btnReset" class="link">Empezar de nuevo</button>
+  </footer>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
