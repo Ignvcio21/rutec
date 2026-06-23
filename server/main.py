@@ -175,7 +175,7 @@ async def _call_grok_vision(images: list[tuple[bytes, str]], prompt: str) -> dic
         if code == 429:
             raise HTTPException(
                 status_code=429,
-                detail="Límite de la IA alcanzado momentáneamente. Espera ~1 minuto y reintenta.",
+                detail=f"[diag 429] {resp.text[:600] if resp is not None else ''}",
             )
         if code in (500, 502, 503, 529):
             raise HTTPException(
