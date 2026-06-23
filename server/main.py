@@ -144,6 +144,7 @@ async def _call_grok_vision(images: list[tuple[bytes, str]], prompt: str) -> dic
     payload = {
         "model": OCR_MODEL,
         "temperature": 0,
+        "max_tokens": 8192,
         "messages": [{"role": "user", "content": content}],
     }
     headers = {
