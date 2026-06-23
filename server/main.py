@@ -81,17 +81,19 @@ app = FastAPI(title="Rutec", version="1.0.0")
 # Prompts para la IA de vision
 # ----------------------------------------------------------------------------
 PROMPT_PLANTILLA = (
-    "Eres un asistente que lee una planilla / hoja de ruta / liquidacion de reparto. "
-    "Es una tabla con una fila por cliente a visitar. De cada fila extrae, si existen: "
-    "el NUMERO de factura o documento, el NOMBRE del cliente, y el VENDEDOR (codigo o nombre). "
+    "Eres un asistente que lee una planilla / hoja de ruta / liquidacion de reparto chilena. "
+    "La hoja tiene un ENCABEZADO con datos del repartidor o encargado (nombre, RUT, fecha) — IGNORA ese encabezado. "
+    "Debajo del encabezado hay una TABLA con una fila por cliente a visitar (almacen, minimarket, distribuidor, etc.). "
+    "De cada fila de la tabla extrae: el NUMERO de factura o documento, el NOMBRE del cliente/almacen, y el VENDEDOR. "
     "La hoja normalmente NO trae direcciones. "
     "Devuelve UNICAMENTE un JSON valido con esta forma exacta:\n"
     '{"filas": [{"nro": "...", "cliente": "...", "vendedor": "..."}]}\n'
     "Reglas:\n"
     "- 'nro' = numero de factura/documento de esa fila (solo los digitos). Si no hay, cadena vacia.\n"
-    "- 'cliente' = nombre del cliente tal como aparece, en mayusculas.\n"
+    "- 'cliente' = nombre del ALMACEN o DESTINATARIO de esa fila, en mayusculas. "
+    "NO uses el nombre del repartidor o encargado que aparece en el encabezado.\n"
     "- 'vendedor' = codigo o nombre del vendedor de esa fila (ej. '010 GUILLERMO GARCIA'). Si no hay, cadena vacia.\n"
-    "Una fila por cada renglon, aunque el mismo cliente se repita con distinto numero. "
+    "Una fila por cada renglon de la tabla, aunque el mismo cliente se repita con distinto numero. "
     "No agregues explicaciones ni texto fuera del JSON."
 )
 
