@@ -519,7 +519,7 @@ $("facturaFile").addEventListener("change", async (e) => {
   const files = Array.from(e.target.files);
   if (!files.length) return;
   // Agrupar las imágenes para enviar varias en una sola petición (ahorra cuota de IA).
-  const CHUNK = 6;
+  const CHUNK = 2;
   const grupos = [];
   for (let i = 0; i < files.length; i += CHUNK) grupos.push(files.slice(i, i + CHUNK));
 
@@ -531,7 +531,7 @@ $("facturaFile").addEventListener("change", async (e) => {
   for (let ronda = 0; ronda < MAX_RONDAS && pendientes.length; ronda++) {
     if (ronda > 0) {
       // La IA estaba saturada (503): esperar y reintentar SOLO los grupos que fallaron.
-      for (let s = 25; s > 0; s--) {
+      for (let s = 65; s > 0; s--) {
         setStatus($("facturaStatus"), `IA saturada. Reintentando ${pendientes.length} grupo(s) en ${s}s...`, "work");
         await new Promise((r) => setTimeout(r, 1000));
       }

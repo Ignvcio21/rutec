@@ -156,7 +156,7 @@ async def _call_grok_vision(images: list[tuple[bytes, str]], prompt: str) -> dic
     # del modelo). Espera incremental entre intentos.
     transitorios = {429, 500, 502, 503, 529}
     resp = None
-    intentos = 4
+    intentos = 5
     for attempt in range(intentos):
         try:
             async with httpx.AsyncClient(timeout=120) as client:
@@ -168,8 +168,16 @@ async def _call_grok_vision(images: list[tuple[bytes, str]], prompt: str) -> dic
         if resp is not None and resp.status_code == 200:
             break
         code = resp.status_code if resp is not None else 0
-        wait = 15 * (attempt + 1) if code == 429 else 2 * (attempt + 1)  # 429: 15s,30s,45s
         if (resp is None or code in transitorios) and attempt < intentos - 1:
+            if code == 429:
+                # Leer retry-after que manda Groq; si no viene, esperar 65s (ventana de 1 min + buffer)
+                retry_after = resp.headers.get("retry-after") or resp.headers.get("x-ratelimit-reset-tokens")
+                try:
+                    wait = float(retry_after) + 5
+                except (TypeError, ValueError):
+                    wait = 65
+            else:
+                wait = 3 * (attempt + 1)
             await asyncio.sleep(wait)
             continue
         break
