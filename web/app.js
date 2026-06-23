@@ -540,7 +540,7 @@ $("facturaFile").addEventListener("change", async (e) => {
     for (let j = 0; j < pendientes.length; j++) {
       const { g, i } = pendientes[j];
       setStatus($("facturaStatus"), `Leyendo facturas con IA... ${ronda > 0 ? "(reintento) " : ""}grupo ${i + 1}/${grupos.length}`, "work");
-      if (j > 0) await new Promise((r) => setTimeout(r, 2500));
+      if (j > 0) await new Promise((r) => setTimeout(r, 6000));
       try {
         const data = await apiOcr(g, "factura");
         const arr = data.facturas || (data.cliente ? [data] : []);

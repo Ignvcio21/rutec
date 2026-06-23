@@ -168,8 +168,9 @@ async def _call_grok_vision(images: list[tuple[bytes, str]], prompt: str) -> dic
         if resp is not None and resp.status_code == 200:
             break
         code = resp.status_code if resp is not None else 0
+        wait = 15 * (attempt + 1) if code == 429 else 2 * (attempt + 1)  # 429: 15s,30s,45s
         if (resp is None or code in transitorios) and attempt < intentos - 1:
-            await asyncio.sleep(2 * (attempt + 1))  # 2s, 4s, 6s, 8s
+            await asyncio.sleep(wait)
             continue
         break
 
