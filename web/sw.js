@@ -1,6 +1,6 @@
 /* Service worker minimo: cachea la cascara de la app para que cargue rapido
    y funcione aunque la red este lenta. Las llamadas a /api siempre van a la red. */
-const CACHE = "rutec-v18";
+const CACHE = "rutec-v19";
 const ASSETS = [
   "./",
   "index.html",

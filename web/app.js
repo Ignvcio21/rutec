@@ -554,7 +554,10 @@ $("facturaFile").addEventListener("change", async (e) => {
           if (item.cliente || item.direccion) { state.facturas.push(item); found++; }
         }
       } catch (err) {
-        fallaron.push({ g, i }); // reintentar en la siguiente ronda
+        console.error(`Grupo ${i+1} falló:`, err.message);
+        setStatus($("facturaStatus"), `⚠️ Grupo ${i+1} falló: ${err.message}`, "bad");
+        await new Promise((r) => setTimeout(r, 3000));
+        fallaron.push({ g, i });
       }
     }
     pendientes = fallaron;
