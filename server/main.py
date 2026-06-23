@@ -175,7 +175,7 @@ async def _call_grok_vision(images: list[tuple[bytes, str]], prompt: str) -> dic
         if code == 429:
             raise HTTPException(
                 status_code=429,
-                detail=f"[diag 429] {resp.text[:600] if resp is not None else ''}",
+                detail="El proveedor de IA rechazó por límite/cuota (429). Revisa el cupo o el plan de tu API key.",
             )
         if code in (500, 502, 503, 529):
             raise HTTPException(
