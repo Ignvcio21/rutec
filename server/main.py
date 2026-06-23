@@ -81,19 +81,19 @@ app = FastAPI(title="Rutec", version="1.0.0")
 # Prompts para la IA de vision
 # ----------------------------------------------------------------------------
 PROMPT_PLANTILLA = (
-    "Eres un asistente que lee una planilla / hoja de ruta / liquidacion de reparto chilena. "
-    "La hoja tiene un ENCABEZADO con datos del repartidor o encargado (nombre, RUT, fecha) — IGNORA ese encabezado. "
-    "Debajo del encabezado hay una TABLA con una fila por cliente a visitar (almacen, minimarket, distribuidor, etc.). "
-    "De cada fila de la tabla extrae: el NUMERO de factura o documento, el NOMBRE del cliente/almacen, y el VENDEDOR. "
-    "La hoja normalmente NO trae direcciones. "
+    "Eres un asistente que lee una liquidacion / hoja de ruta de reparto chilena de la empresa SISTEMICA S.A. "
+    "La tabla tiene estas columnas en orden: KOF | NOKOFU | ENDO | TIDO | NUDO | MONTO | NOKOEN. "
+    "Donde: NOKOFU = nombre del COBRADOR o vendedor (se repite igual en cada fila, ej: ROBERTO HORMAZABAL PARADA). "
+    "NUDO = numero de factura o documento (ej: 0002165668). "
+    "NOKOEN = nombre del CLIENTE o destinatario final (la ultima columna, ej: VILLALOBOS ELIAS, BUSTOS CIFUENTES ERIK ANTONIO). "
+    "De cada fila extrae: NUDO como 'nro', NOKOEN como 'cliente', y KOF+NOKOFU como 'vendedor'. "
     "Devuelve UNICAMENTE un JSON valido con esta forma exacta:\n"
     '{"filas": [{"nro": "...", "cliente": "...", "vendedor": "..."}]}\n'
     "Reglas:\n"
-    "- 'nro' = numero de factura/documento de esa fila (solo los digitos). Si no hay, cadena vacia.\n"
-    "- 'cliente' = nombre del ALMACEN o DESTINATARIO de esa fila, en mayusculas. "
-    "NO uses el nombre del repartidor o encargado que aparece en el encabezado.\n"
-    "- 'vendedor' = codigo o nombre del vendedor de esa fila (ej. '010 GUILLERMO GARCIA'). Si no hay, cadena vacia.\n"
-    "Una fila por cada renglon de la tabla, aunque el mismo cliente se repita con distinto numero. "
+    "- 'nro' = valor de la columna NUDO (solo digitos, sin FCV ni letras). Si no hay, cadena vacia.\n"
+    "- 'cliente' = valor de la columna NOKOEN (ultima columna). NUNCA uses el valor de NOKOFU como cliente.\n"
+    "- 'vendedor' = codigo KOF mas nombre NOKOFU (ej: '018 ROBERTO HORMAZABAL PARADA').\n"
+    "Una fila por cada renglon, aunque NOKOFU se repita. "
     "No agregues explicaciones ni texto fuera del JSON."
 )
 
